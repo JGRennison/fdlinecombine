@@ -180,7 +180,7 @@ int main(int argc, char* argv[]) {
         struct fdinfo* f = fds+(i-1);
         if(!sscanf(argv[i], "%i", &f->fd)) {
             open_again:
-            f->fd = open(argv[i], O_RDONLY, 0022);
+            f->fd = open(argv[i], O_RDONLY | O_NONBLOCK, 0022);
             if(f->fd == -1) {
                 if ( errno==EINTR || errno==EAGAIN ) goto open_again;
                 fprintf(stderr, "%s ", argv[i]);

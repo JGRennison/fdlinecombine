@@ -12,6 +12,9 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 //#define dbgprintf fprintf
 #define dbgprintf(...)
@@ -183,6 +186,37 @@ int main(int argc, char* argv[]) {
             f->fd = open(argv[i], O_RDONLY | O_NONBLOCK, 0022);
             if(f->fd == -1) {
                 if ( errno==EINTR || errno==EAGAIN ) goto open_again;
+
+                //try to open the file as a Unix domain socket instead
+                f->fd = socket(AF_UNIX, SOCK_STREAM, 0);
+                if(f->fd != -1) {
+                    int flags = fcntl(f->fd, F_GETFL, 0);
+                    int res = fcntl(f->fd, F_SETFL, flags | O_NONBLOCK);
+                    if(flags < 0 || res < 0) {
+                        close(f->fd);
+                        f->fd = -1;
+                    }
+                }
+                if(f->fd != -1) {
+                    struct sockaddr_un my_addr;
+                    size_t maxlen = sizeof(my_addr.sun_path) - 1;
+                    memset(&my_addr, 0, sizeof(my_addr));
+                    my_addr.sun_family = AF_UNIX;
+                    if(strlen(argv[i]) > maxlen) {
+                        fprintf(stderr, "Socket name: %s too long, maximum: %d\n", argv[i], (int) maxlen);
+                        close(f->fd);
+                        f->fd = -1;
+                    }
+                    else {
+                        strncpy(my_addr.sun_path, argv[i], maxlen);
+                        if(connect(f->fd, (struct sockaddr *) &my_addr, sizeof(my_addr)) == -1) {
+                            close(f->fd);
+                            f->fd = -1;
+                        }
+                    }
+                }
+            }
+            if(f->fd == -1) {
                 fprintf(stderr, "%s ", argv[i]);
                 perror("open");
                 fprintf(stderr, "All arguments must be file descriptor numbers or file names\n");
